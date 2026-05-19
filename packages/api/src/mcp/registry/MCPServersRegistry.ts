@@ -58,10 +58,6 @@ export class MCPServersRegistry {
     Promise<t.ParsedServerConfig | undefined>
   >();
 
-  /** Memoized YAML server names — set once after boot-time init, never changes. */
-  private yamlServerNames: Set<string> | null = null;
-  private yamlServerNamesPromise: Promise<Set<string>> | null = null;
-
   constructor(
     mongoose: typeof import('mongoose'),
     allowedDomains?: string[] | null,
@@ -135,21 +131,12 @@ export class MCPServersRegistry {
   /**
    * Returns the config for a single server. When `configServers` is provided, config-source
    * servers are resolved from it directly (no global state, no cross-tenant race).
-   * Precedence matches `getAllServerConfigs`: User DB beats Config-tier beats YAML, so a
-   * per-user server (`source: 'user'`) is never shadowed by an admin-panel override of the
-   * same name.
    */
   public async getServerConfig(
     serverName: string,
     userId?: string,
     configServers?: Record<string, t.ParsedServerConfig>,
   ): Promise<t.ParsedServerConfig | undefined> {
-    if (configServers?.[serverName] && userId) {
-      const userDbConfig = await this.dbConfigsRepo.get(serverName, userId);
-      if (userDbConfig?.source === 'user') {
-        return userDbConfig;
-      }
-    }
     if (configServers?.[serverName]) {
       return configServers[serverName];
     }
@@ -188,9 +175,13 @@ export class MCPServersRegistry {
     const base = await this.getBaseServerConfigs(userId);
     const result: Record<string, t.ParsedServerConfig> = { ...base };
     for (const [name, override] of Object.entries(configServers)) {
-      if (result[name]?.source !== 'user') {
-        result[name] = override;
+      if (result[name]?.source === 'user') {
+        logger.debug(`[MCP][config][${name}] Admin override shadowed by user-tier entry`);
+        continue;
       }
+      if (override.inspectionFailed && result[name]) continue;
+      const baseSource = result[name]?.source;
+      result[name] = baseSource ? { ...override, source: baseSource } : override;
     }
     return result;
   }
@@ -558,8 +549,6 @@ export class MCPServersRegistry {
     await this.configCacheRepo.reset();
     await this.readThroughCache.clear();
     await this.readThroughCacheAll.clear();
-    this.yamlServerNames = null;
-    this.yamlServerNamesPromise = null;
   }
 
   public async removeServer(
@@ -586,32 +575,6 @@ export class MCPServersRegistry {
 
   private getReadThroughCacheKey(serverName: string, userId?: string): string {
     return userId ? `${serverName}::${userId}` : serverName;
-  }
-
-  /**
-   * Returns memoized YAML server names. Populated lazily on first call after boot/reset.
-   * YAML servers don't change after boot, so this avoids repeated `getAll()` calls.
-   * Uses promise deduplication to prevent concurrent cold-start double-fetch.
-   */
-  private getYamlServerNames(): Promise<Set<string>> {
-    if (this.yamlServerNames) {
-      return Promise.resolve(this.yamlServerNames);
-    }
-    if (this.yamlServerNamesPromise) {
-      return this.yamlServerNamesPromise;
-    }
-    this.yamlServerNamesPromise = this.cacheConfigsRepo
-      .getAll()
-      .then((configs) => {
-        this.yamlServerNames = new Set(Object.keys(configs));
-        this.yamlServerNamesPromise = null;
-        return this.yamlServerNames;
-      })
-      .catch((err) => {
-        this.yamlServerNamesPromise = null;
-        throw err;
-      });
-    return this.yamlServerNamesPromise;
   }
 
   /**
