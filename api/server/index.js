@@ -37,6 +37,9 @@ const staticCache = require('./utils/staticCache');
 const optionalJwtAuth = require('./middleware/optionalJwtAuth');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
+// Split-11 §2 — Mode 2 (Oxia SDK) server-side gating.
+const oxiaConfigRoutes = require('./routes/oxiaConfig');
+const requireMode1 = require('./middleware/requireMode1');
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
 
@@ -93,6 +96,13 @@ const startServer = async () => {
   }
 
   app.get('/health', (_req, res) => res.status(200).send('OK'));
+  // Split-11 §7: e2e regression test `Mode 1 /api/health responds 200`
+  // (`e2e/mode1/regression.spec.ts`) hits this path through the vite
+  // dev proxy (`/api/*` → backend). Mirror the existing `/health`
+  // route so the test passes without altering its contract. Cheap to
+  // keep alongside `/health` (the latter is the historical path used
+  // by Docker healthchecks).
+  app.get('/api/health', (_req, res) => res.status(200).send('OK'));
 
   /* Middleware */
   app.use(noIndex);
@@ -148,11 +158,23 @@ const startServer = async () => {
   /* Per-request capability cache — must be registered before any route that calls hasCapability */
   app.use(capabilityContextMiddleware);
 
+  /* Split-11 §2 — Mode 2 (Oxia SDK) server-side surface. The
+   * `/api/oxia/config` endpoint is always-on so the client can boot
+   * and decide which UI to render. `requireMode1` returns 410 on the
+   * routes Mode 2 must not expose (OAuth + password auth) — layered
+   * on top of the Mode-1 routes that follow so even a misconfigured
+   * deployment doesn't leak credentials toward the LibreChat auth
+   * surface. Under Mode 1 (default) requireMode1 is a no-op
+   * passthrough; Mode 1 behavior is byte-identical. */
+  app.use('/api/oxia', oxiaConfigRoutes);
+
   /* Pre-auth tenant context for unauthenticated routes that need tenant scoping.
-   * The reverse proxy / auth gateway sets `X-Tenant-Id` header for multi-tenant deployments. */
-  app.use('/oauth', preAuthTenantMiddleware, routes.oauth);
+   * The reverse proxy / auth gateway sets `X-Tenant-Id` header for multi-tenant deployments.
+   * v0.8.5 added preAuthTenantMiddleware; Oxia layers requireMode1 in front so Mode 2
+   * deployments 410 the OAuth + password-auth surface before tenant resolution runs. */
+  app.use('/oauth', requireMode1, preAuthTenantMiddleware, routes.oauth);
   /* API Endpoints */
-  app.use('/api/auth', preAuthTenantMiddleware, routes.auth);
+  app.use('/api/auth', requireMode1, preAuthTenantMiddleware, routes.auth);
   app.use('/api/admin', routes.adminAuth);
   app.use('/api/admin/config', routes.adminConfig);
   app.use('/api/admin/grants', routes.adminGrants);
