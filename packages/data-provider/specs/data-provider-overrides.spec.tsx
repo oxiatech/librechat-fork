@@ -11,11 +11,7 @@ import {
 
 const wrapWith = (overrides: DataProviderOverrides | null) =>
   function Wrapper({ children }: { children: React.ReactNode }) {
-    return React.createElement(
-      DataProviderOverridesProvider,
-      { value: overrides },
-      children,
-    );
+    return React.createElement(DataProviderOverridesProvider, { value: overrides }, children);
   };
 
 describe('useDataProviderOverrides', () => {

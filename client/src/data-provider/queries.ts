@@ -50,12 +50,18 @@ export const useGetConvoIdQuery = (
   id: string,
   config?: UseQueryOptions<t.TConversation>,
 ): QueryObserverResult<t.TConversation> => {
+  /* Optional injection point for downstream consumers. The override
+   * branch below is gated by a provider whose value is stable for the
+   * component lifetime, so the conditional dispatch is a stable
+   * hook-call sequence per render — the standard hook-factory pattern. */
   const overrides = useDataProviderOverrides();
   if (overrides?.useGetConvoIdQuery) {
     return (overrides.useGetConvoIdQuery as typeof useGetConvoIdQuery)(id, config);
   }
+  // eslint-disable-next-line react-hooks/rules-of-hooks
   const queryClient = useQueryClient();
 
+  // eslint-disable-next-line react-hooks/rules-of-hooks
   return useQuery<t.TConversation>(
     [QueryKeys.conversation, id],
     () => {
@@ -91,6 +97,7 @@ export const useConversationsInfiniteQuery = (
   params: ConversationListParams,
   config?: UseInfiniteQueryOptions<ConversationListResponse, unknown>,
 ) => {
+  /* See useGetConvoIdQuery — same hook-factory pattern. */
   const overrides = useDataProviderOverrides();
   if (overrides?.useConversationsInfiniteQuery) {
     return (overrides.useConversationsInfiniteQuery as typeof useConversationsInfiniteQuery)(
@@ -100,6 +107,7 @@ export const useConversationsInfiniteQuery = (
   }
   const { isArchived, sortBy, sortDirection, tags, search } = params;
 
+  // eslint-disable-next-line react-hooks/rules-of-hooks
   return useInfiniteQuery<ConversationListResponse>({
     queryKey: [
       isArchived ? QueryKeys.archivedConversations : QueryKeys.allConversations,

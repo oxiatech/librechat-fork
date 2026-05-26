@@ -1,7 +1,7 @@
 import userEvent from '@testing-library/user-event';
 import { render, waitFor } from 'test/layout-test-utils';
 import * as mockDataProvider from 'librechat-data-provider/react-query';
-import type { TStartupConfig, TRegisterUser } from 'librechat-data-provider';
+import type { TStartupConfig } from 'librechat-data-provider';
 import * as miscDataProvider from '~/data-provider/Misc/queries';
 import * as endpointQueries from '~/data-provider/Endpoints/queries';
 import * as authMutations from '~/data-provider/Auth/mutations';
@@ -190,7 +190,3 @@ describe('Registration factoryification — registerOverride + onSuccess', () =>
     expect(onSuccess).toHaveBeenCalledWith(successData);
   });
 });
-
-// Reference TRegisterUser to keep the import meaningful even though the
-// test passes plain objects.
-export type _Unused = TRegisterUser;

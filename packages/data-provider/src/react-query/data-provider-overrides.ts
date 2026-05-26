@@ -38,11 +38,7 @@ export function DataProviderOverridesProvider({
   value,
   children,
 }: DataProviderOverridesProviderProps) {
-  return React.createElement(
-    DataProviderOverridesContext.Provider,
-    { value },
-    children,
-  );
+  return React.createElement(DataProviderOverridesContext.Provider, { value }, children);
 }
 
 /**
