@@ -6,6 +6,7 @@ import {
   defaultOrderQuery,
   defaultAssistantsVersion,
 } from 'librechat-data-provider';
+import { useDataProviderOverrides } from 'librechat-data-provider/react-query';
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   UseInfiniteQueryOptions,
@@ -49,6 +50,10 @@ export const useGetConvoIdQuery = (
   id: string,
   config?: UseQueryOptions<t.TConversation>,
 ): QueryObserverResult<t.TConversation> => {
+  const overrides = useDataProviderOverrides();
+  if (overrides?.useGetConvoIdQuery) {
+    return (overrides.useGetConvoIdQuery as typeof useGetConvoIdQuery)(id, config);
+  }
   const queryClient = useQueryClient();
 
   return useQuery<t.TConversation>(
@@ -86,6 +91,13 @@ export const useConversationsInfiniteQuery = (
   params: ConversationListParams,
   config?: UseInfiniteQueryOptions<ConversationListResponse, unknown>,
 ) => {
+  const overrides = useDataProviderOverrides();
+  if (overrides?.useConversationsInfiniteQuery) {
+    return (overrides.useConversationsInfiniteQuery as typeof useConversationsInfiniteQuery)(
+      params,
+      config,
+    );
+  }
   const { isArchived, sortBy, sortDirection, tags, search } = params;
 
   return useInfiniteQuery<ConversationListResponse>({

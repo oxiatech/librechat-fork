@@ -2,6 +2,7 @@ import { useLocation } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { UseQueryOptions, QueryObserverResult } from '@tanstack/react-query';
 import { QueryKeys, dataService } from 'librechat-data-provider';
+import { useDataProviderOverrides } from 'librechat-data-provider/react-query';
 import type * as t from 'librechat-data-provider';
 import { logger } from '~/utils';
 
@@ -9,6 +10,10 @@ export const useGetMessagesByConvoId = <TData = t.TMessage[]>(
   id: string,
   config?: UseQueryOptions<t.TMessage[], unknown, TData>,
 ): QueryObserverResult<TData> => {
+  const overrides = useDataProviderOverrides();
+  if (overrides?.useGetMessagesByConvoId) {
+    return (overrides.useGetMessagesByConvoId as typeof useGetMessagesByConvoId)(id, config);
+  }
   const location = useLocation();
   const queryClient = useQueryClient();
   return useQuery<t.TMessage[], unknown, TData>(

@@ -5,6 +5,7 @@ import {
 } from 'librechat-data-provider';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { dataService, MutationKeys, QueryKeys, defaultOrderQuery } from 'librechat-data-provider';
+import { useDataProviderOverrides } from 'librechat-data-provider/react-query';
 import type { InfiniteData, UseMutationResult } from '@tanstack/react-query';
 import type * as t from 'librechat-data-provider';
 import {
@@ -26,6 +27,10 @@ export const useUpdateConversationMutation = (
   t.TUpdateConversationRequest,
   unknown
 > => {
+  const overrides = useDataProviderOverrides();
+  if (overrides?.useUpdateConversationMutation) {
+    return (overrides.useUpdateConversationMutation as typeof useUpdateConversationMutation)(id);
+  }
   const queryClient = useQueryClient();
   return useMutation(
     (payload: t.TUpdateConversationRequest) => dataService.updateConversation(payload),
@@ -460,6 +465,12 @@ export const useDeleteConversationMutation = (
   t.TDeleteConversationRequest,
   unknown
 > => {
+  const overrides = useDataProviderOverrides();
+  if (overrides?.useDeleteConversationMutation) {
+    return (overrides.useDeleteConversationMutation as typeof useDeleteConversationMutation)(
+      options,
+    );
+  }
   const queryClient = useQueryClient();
 
   return useMutation(
