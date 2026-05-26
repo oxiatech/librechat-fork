@@ -1,6 +1,10 @@
 const express = require('express');
-const jwt = require('jsonwebtoken');
-const jwksClient = require('jwks-rsa');
+// Use `jose` rather than `jsonwebtoken` here because the gateway signs
+// OPAQUE JWTs with Ed25519 (EdDSA) — see crates/oxia-mode-2-auth/src/jwt.rs
+// and the gateway's JWKS `alg: EdDSA`. The `jsonwebtoken` v9 we ship for
+// LC's own auth supports only RS*/ES*/HS*, so it can't validate EdDSA.
+// `jose` covers it and ships first-party JWKS support too.
+const { jwtVerify, createRemoteJWKSet } = require('jose');
 const { logger } = require('@librechat/data-schemas');
 const { findUser, createUser, updateUser, getUserById } = require('~/models');
 const { setAuthTokens } = require('~/server/services/AuthService');
@@ -28,51 +32,36 @@ const { setAuthTokens } = require('~/server/services/AuthService');
 
 const router = express.Router();
 
-let _jwksClientInstance = null;
-const getJwksClient = () => {
-  if (_jwksClientInstance) {
-    return _jwksClientInstance;
+let _jwksInstance = null;
+const getJwks = () => {
+  if (_jwksInstance) {
+    return _jwksInstance;
   }
   const jwksUri = process.env.OXIA_GATEWAY_JWKS_URI;
   if (!jwksUri) {
     return null;
   }
-  _jwksClientInstance = jwksClient({
-    jwksUri,
-    cache: true,
-    rateLimit: true,
-    jwksRequestsPerMinute: 10,
-  });
-  return _jwksClientInstance;
+  // jose's remote JWKS handles fetching + caching + key rotation. Cache
+  // settings default to 30s minimum + 10min cooldown which matches our
+  // earlier jwks-rsa config closely enough.
+  _jwksInstance = createRemoteJWKSet(new URL(jwksUri));
+  return _jwksInstance;
 };
 
-const getSigningKey = (header, cb) => {
-  const client = getJwksClient();
-  if (!client) {
-    return cb(new Error('OXIA_GATEWAY_JWKS_URI is not configured'));
+const verifyGatewayJwt = async (token) => {
+  const jwks = getJwks();
+  if (!jwks) {
+    throw new Error('OXIA_GATEWAY_JWKS_URI is not configured');
   }
-  client.getSigningKey(header.kid, (err, key) => {
-    if (err) {
-      return cb(err);
-    }
-    cb(null, key.getPublicKey());
+  const { payload } = await jwtVerify(token, jwks, {
+    issuer: process.env.OXIA_GATEWAY_JWT_ISSUER,
+    audience: process.env.OXIA_GATEWAY_JWT_AUDIENCE,
+    // jose infers the alg from the token header + JWKS; we don't pin
+    // here because the JWKS already advertises `alg: EdDSA` and jose
+    // refuses unsigned/unsafe algs by default.
   });
+  return payload;
 };
-
-const verifyGatewayJwt = (token) =>
-  new Promise((resolve, reject) => {
-    const opts = {
-      algorithms: ['RS256'],
-      issuer: process.env.OXIA_GATEWAY_JWT_ISSUER,
-      audience: process.env.OXIA_GATEWAY_JWT_AUDIENCE,
-    };
-    jwt.verify(token, getSigningKey, opts, (err, payload) => {
-      if (err) {
-        return reject(err);
-      }
-      resolve(payload);
-    });
-  });
 
 const upsertUserFromPayload = async (payload) => {
   const oxiaUserId = payload.sub;
@@ -81,12 +70,18 @@ const upsertUserFromPayload = async (payload) => {
     return existing;
   }
 
+  // The Oxia gateway JWT only carries `sub` (the OPAQUE user_id) — no
+  // email / name / preferred_username claims. In Mode 2 the user_id is
+  // whatever the user typed in the email field on register (the
+  // Registration override maps `email → userId`), so we use it for both
+  // LC's required `email` and `username` columns. Falling back to `name`
+  // = sub keeps LC's profile UI from rendering a blank.
   const userId = await createUser(
     {
       oxiaUserId,
-      email: payload.email,
-      name: payload.name,
-      username: payload.preferred_username || payload.email,
+      email: payload.email || oxiaUserId,
+      name: payload.name || oxiaUserId,
+      username: payload.preferred_username || payload.email || oxiaUserId,
       emailVerified: true,
       provider: 'oxia',
     },
