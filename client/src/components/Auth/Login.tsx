@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ErrorTypes, registerPage } from 'librechat-data-provider';
 import { OpenIDIcon, useToastContext } from '@librechat/client';
 import { useOutletContext, useSearchParams, useLocation } from 'react-router-dom';
+import type { TLoginUser } from 'librechat-data-provider';
 import type { TLoginLayoutContext } from '~/common';
 import { getLoginError, persistRedirectToSession } from '~/utils';
 import { ErrorMessage } from '~/components/Auth/ErrorMessage';
@@ -14,11 +15,22 @@ interface LoginLocationState {
   redirect_to?: string;
 }
 
-function Login() {
+type TLoginProps = {
+  /**
+   * Optional injection point for downstream consumers. When provided, this
+   * callback replaces the default `useAuthContext().login` handler as the
+   * `LoginForm.onSubmit`. Existing behavior is preserved when the prop is
+   * absent.
+   */
+  loginOverride?: (data: TLoginUser) => void;
+};
+
+function Login({ loginOverride }: TLoginProps = {}) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const { error, setError, login } = useAuthContext();
   const { startupConfig } = useOutletContext<TLoginLayoutContext>();
+  const onSubmit = loginOverride ?? login;
 
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
@@ -103,7 +115,7 @@ function Login() {
       {error != null && <ErrorMessage>{localize(getLoginError(error))}</ErrorMessage>}
       {startupConfig?.emailLoginEnabled === true && (
         <LoginForm
-          onSubmit={login}
+          onSubmit={onSubmit}
           startupConfig={startupConfig}
           error={error}
           setError={setError}
