@@ -1,5 +1,5 @@
 import { useForm } from 'react-hook-form';
-import React, { useContext, useState } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import { Turnstile } from '@marsidev/react-turnstile';
 import { ThemeContext, Spinner, Button, isDark } from '@librechat/client';
 import { useNavigate, useOutletContext, useLocation } from 'react-router-dom';
@@ -10,7 +10,40 @@ import type { TLoginLayoutContext } from '~/common';
 import { useLocalize, TranslationKeys } from '~/hooks';
 import { ErrorMessage } from './ErrorMessage';
 
-const Registration: React.FC = () => {
+/**
+ * Minimal mutation shape consumed by Registration's submit handler. Mirrors
+ * the surface of `useRegisterUserMutation`'s return value that this
+ * component actually reads, so downstream consumers can supply a custom
+ * mutation without taking a dependency on react-query internals.
+ */
+export type TRegisterMutationLike = {
+  mutate: (data: TRegisterUser & { token?: string }) => void;
+  isLoading?: boolean;
+  isError?: boolean;
+  isSuccess?: boolean;
+  data?: unknown;
+  error?: Error | null;
+};
+
+type TSubmitMutation = Pick<TRegisterMutationLike, 'mutate'>;
+
+type TRegistrationProps = {
+  /**
+   * Optional injection point for downstream consumers. When provided, this
+   * mutation replaces the default `useRegisterUserMutation` dispatch from
+   * the registration form's submit handler. Existing behavior is preserved
+   * when the prop is absent.
+   */
+  registerOverride?: TRegisterMutationLike;
+  /**
+   * Optional success callback fired when `registerOverride` reports
+   * `isSuccess === true`. Receives the override mutation's `data` payload.
+   * Only invoked when `registerOverride` is also provided.
+   */
+  onSuccess?: (data: unknown) => void;
+};
+
+const Registration: React.FC<TRegistrationProps> = ({ registerOverride, onSuccess }) => {
   const navigate = useNavigate();
   const localize = useLocalize();
   const { theme } = useContext(ThemeContext);
@@ -63,6 +96,26 @@ const Registration: React.FC = () => {
       }
     },
   });
+
+  const submitMutation: TSubmitMutation = registerOverride
+    ? { mutate: (data) => registerOverride.mutate(data) }
+    : { mutate: (data) => registerUser.mutate(data) };
+
+  useEffect(() => {
+    if (registerOverride && registerOverride.isSuccess && onSuccess) {
+      onSuccess(registerOverride.data);
+    }
+  }, [registerOverride, registerOverride?.isSuccess, registerOverride?.data, onSuccess]);
+
+  useEffect(() => {
+    if (registerOverride && registerOverride.isError && registerOverride.error) {
+      const err = registerOverride.error as unknown as TError;
+      setIsSubmitting(false);
+      if (err.response?.data?.message) {
+        setErrorMessage(err.response.data.message);
+      }
+    }
+  }, [registerOverride, registerOverride?.isError, registerOverride?.error]);
 
   const renderInput = (id: string, label: TranslationKeys, type: string, validation: object) => (
     <div className="mb-4">
@@ -124,7 +177,7 @@ const Registration: React.FC = () => {
             aria-label="Registration form"
             method="POST"
             onSubmit={handleSubmit((data: TRegisterUser) =>
-              registerUser.mutate({ ...data, token: token ?? undefined }),
+              submitMutation.mutate({ ...data, token: token ?? undefined }),
             )}
           >
             {renderInput('name', 'com_auth_full_name', 'text', {
