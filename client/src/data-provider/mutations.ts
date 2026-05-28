@@ -5,6 +5,7 @@ import {
 } from 'librechat-data-provider';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { dataService, MutationKeys, QueryKeys, defaultOrderQuery } from 'librechat-data-provider';
+import { useDataProviderOverrides } from 'librechat-data-provider/react-query';
 import type { InfiniteData, UseMutationResult } from '@tanstack/react-query';
 import type * as t from 'librechat-data-provider';
 import {
@@ -26,7 +27,17 @@ export const useUpdateConversationMutation = (
   t.TUpdateConversationRequest,
   unknown
 > => {
+  /* Optional injection point for downstream consumers. The override
+   * branch below is gated by a provider whose value is stable for the
+   * component lifetime, so the conditional dispatch is a stable
+   * hook-call sequence per render — the standard hook-factory pattern. */
+  const overrides = useDataProviderOverrides();
+  if (overrides?.useUpdateConversationMutation) {
+    return (overrides.useUpdateConversationMutation as typeof useUpdateConversationMutation)(id);
+  }
+  // eslint-disable-next-line react-hooks/rules-of-hooks
   const queryClient = useQueryClient();
+  // eslint-disable-next-line react-hooks/rules-of-hooks
   return useMutation(
     (payload: t.TUpdateConversationRequest) => dataService.updateConversation(payload),
     {
@@ -460,8 +471,17 @@ export const useDeleteConversationMutation = (
   t.TDeleteConversationRequest,
   unknown
 > => {
+  /* See useUpdateConversationMutation — same hook-factory pattern. */
+  const overrides = useDataProviderOverrides();
+  if (overrides?.useDeleteConversationMutation) {
+    return (overrides.useDeleteConversationMutation as typeof useDeleteConversationMutation)(
+      options,
+    );
+  }
+  // eslint-disable-next-line react-hooks/rules-of-hooks
   const queryClient = useQueryClient();
 
+  // eslint-disable-next-line react-hooks/rules-of-hooks
   return useMutation(
     (payload: t.TDeleteConversationRequest) =>
       dataService.deleteConversation(payload) as Promise<t.TDeleteConversationResponse>,

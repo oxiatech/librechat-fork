@@ -39,6 +39,7 @@ const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
 // Split-11 §2 — Mode 2 (Oxia SDK) server-side gating.
 const oxiaConfigRoutes = require('./routes/oxiaConfig');
+const oxiaSyncSessionRoutes = require('./routes/oxia/sync-session');
 const requireMode1 = require('./middleware/requireMode1');
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
@@ -167,6 +168,12 @@ const startServer = async () => {
    * surface. Under Mode 1 (default) requireMode1 is a no-op
    * passthrough; Mode 1 behavior is byte-identical. */
   app.use('/api/oxia', oxiaConfigRoutes);
+  /* Mode 2 session-sync endpoint — validates a gateway-minted JWT against
+   * the gateway JWKS and upserts a local LibreChat user + mints a session
+   * cookie via the same AuthService helper used by password login. Always
+   * mounted (gated by env var presence; returns 500 / 401 if unconfigured).
+   * Mode-1 deployments simply never call it. */
+  app.use('/api/oxia', oxiaSyncSessionRoutes);
 
   /* Pre-auth tenant context for unauthenticated routes that need tenant scoping.
    * The reverse proxy / auth gateway sets `X-Tenant-Id` header for multi-tenant deployments.
